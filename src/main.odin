@@ -2,172 +2,279 @@ package main
 
 import "core:os"
 import "core:fmt"
+import "core:slice"
 
-ComponentID :: distinct uint
-Connection :: distinct [dynamic]ComponentID
+ComponentID :: distinct int
+
+Input :: struct {
+	component: ComponentID,
+	index:     int,
+}
+
+Output :: struct {
+	state:      bool,
+	next_state: bool,
+	inputs:     [dynamic]^Input,
+}
 
 Component :: struct {
-    name:       string,
-    id:         ComponentID,
-    state:      bool,
-    next_state: bool,
-    inputs:     []Connection,
-    has_delay:  bool,
-    update:     proc(^Component, []Component) -> bool,
+	id:      ComponentID,
+	inputs:  []Input,
+	outputs: []Output,
+	data:    union {
+		Switch,
+		NotGate,
+		OrGate,
+		Delayer,
+	},
 }
 
-MakeSwitch :: proc(id: ComponentID) -> Component do return Component{
-    name       = "Switch",
-    id         = id,
-    state      = false,
-    next_state = false,
-    inputs     = make([]Connection, 0),
-    has_delay  = false,
-    update     = proc(using component: ^Component, components: []Component) -> bool {
-        assert(len(inputs) == 0)
-        return false
-    },
+Switch :: struct {
+	on: bool,
 }
 
-MakeNotGate :: proc(id: ComponentID) -> Component do return Component{
-    name       = "Not",
-    id         = id,
-    state      = false,
-    next_state = false,
-    inputs     = make([]Connection, 1),
-    has_delay  = false,
-    update     = proc(using component: ^Component, components: []Component) -> bool {
-        assert(len(inputs) == 1)
-
-        input_0 := false
-        for input in inputs[0] {
-            input_0 ||= components[input].state
-        }
-
-        next_state = !input_0
-        return next_state != state
-    },
+MakeSwitch :: proc(new_id: ComponentID, on: bool) -> Component {
+	using component: Component
+	id = new_id
+	inputs = make([]Input, 0)
+	outputs = make([]Output, 1)
+	outputs[0] = {
+		state      = on,
+		next_state = on,
+		inputs     = make([dynamic]^Input),
+	}
+	data = Switch {
+		on = on,
+	}
+	return component
 }
 
-MakeAndGate :: proc(id: ComponentID) -> Component do return Component{
-    name       = "And",
-    id         = id,
-    state      = false,
-    next_state = false,
-    inputs     = make([]Connection, 2),
-    has_delay  = false,
-    update     = proc(using component: ^Component, components: []Component) -> bool {
-        assert(len(inputs) == 2)
+NotGate :: struct {}
 
-        input_0 := false
-        for input in inputs[0] {
-            input_0 ||= components[input].state
-        }
-
-        input_1 := false
-        for input in inputs[1] {
-            input_1 ||= components[input].state
-        }
-
-        next_state = input_0 && input_1
-        return next_state != state
-    },
+MakeNotGate :: proc(new_id: ComponentID) -> Component {
+	using component: Component
+	id = new_id
+	inputs = make([]Input, 1)
+	inputs[0] = {
+		component = -1,
+		index     = -1,
+	}
+	outputs = make([]Output, 1)
+	outputs[0] = {
+		state      = false,
+		next_state = false,
+		inputs     = make([dynamic]^Input),
+	}
+	data = NotGate{}
+	return component
 }
 
-HasCyclicConnections :: proc(components: []Component) -> bool {
-    searched_components := make(map[ComponentID]bool, len(components))
-    defer delete(searched_components)
+OrGate :: struct {}
 
-    for component in components {
-        if searched_components[component.id] {
-            continue
-        }
+MakeOrGate :: proc(new_id: ComponentID) -> Component {
+	using component: Component
+	id = new_id
+	inputs = make([]Input, 2)
+	inputs[0] = {
+		component = -1,
+		index     = -1,
+	}
+	inputs[1] = {
+		component = -1,
+		index     = -1,
+	}
+	outputs = make([]Output, 1)
+	outputs[0] = {
+		state      = false,
+		next_state = false,
+		inputs     = make([dynamic]^Input),
+	}
+	data = OrGate{}
+	return component
+}
 
-        seen_components := make(map[ComponentID]bool, len(components))
-        defer delete(seen_components)
+Delayer :: struct {
+	previous_inputs: []bool,
+}
 
-        stack := make([dynamic]ComponentID)
-        defer delete(stack)
+MakeDelayer :: proc(new_id: ComponentID, delay: int) -> Component {
+	using component: Component
+	id = new_id
+	inputs = make([]Input, 1)
+	inputs[0] = {
+		component = -1,
+		index     = -1,
+	}
+	outputs = make([]Output, 1)
+	outputs[0] = {
+		state      = false,
+		next_state = false,
+		inputs     = make([dynamic]^Input),
+	}
+	data = Delayer {
+		previous_inputs = make([]bool, delay),
+	}
+	return component
+}
 
-        append(&stack, component.id)
+DestroyComponent :: proc(id: ComponentID, components: ^map[ComponentID]Component) {
+	component := components[id]
+	switch c in component.data {
+	case Switch:
+	case NotGate:
+	case OrGate:
 
-        for len(stack) > 0 {
-            current := pop(&stack)
+	case Delayer:
+		delete(c.previous_inputs)
 
-            if seen_components[current] {
-                return true
-            }
-            seen_components[current] = true
+	case:
+		unreachable()
+	}
 
-            if components[current].has_delay {
-                continue
-            }
+	for input in component.inputs {
+		input_component := components[input.component]
+		output := input_component.outputs[input.index]
+		index := -1
+		for input_connection, input_index in output.inputs {
+			if input_connection.component == id {
+				index = input_index
+				break
+			}
+		}
+		assert(index != -1)
+		ordered_remove(&output.inputs, index)
+	}
+	delete(component.inputs)
 
-            for input_list in components[current].inputs {
-                for input in input_list {
-                    append(&stack, input)
-                    searched_components[input] = true
+	for output in component.outputs {
+		for input in output.inputs {
+			input.component = -1
+			input.index = -1
+		}
+		delete(output.inputs)
+	}
+	delete(component.outputs)
+
+	delete_key(components, id)
+}
+
+UpdateComponents :: proc(components: ^map[ComponentID]Component) {
+	first_iteration := true
+	changed := true
+	for changed {
+		changed = false
+
+		for _, component in components {
+			using component
+			switch c in component.data {
+			case Switch:
+				outputs[0].next_state = c.on
+				changed ||= outputs[0].next_state != outputs[0].state
+
+			case NotGate:
+                if inputs[0].component < 0 || inputs[0].index < 0 do continue
+				input := components[inputs[0].component].outputs[inputs[0].index]
+				outputs[0].next_state = !input.state
+				changed ||= outputs[0].next_state != outputs[0].state
+
+			case OrGate:
+                if inputs[0].component < 0 || inputs[0].index < 0 do continue
+				input_0 := components[inputs[0].component].outputs[inputs[0].index]
+                if inputs[1].component < 0 || inputs[1].index < 0 do continue
+				input_1 := components[inputs[1].component].outputs[inputs[1].index]
+				outputs[0].next_state = input_0.state || input_1.state
+				changed ||= outputs[0].next_state != outputs[0].state
+
+			case Delayer:
+                if inputs[0].component < 0 || inputs[0].index < 0 do continue
+                input := components[inputs[0].component].outputs[inputs[0].index]
+                assert(len(c.previous_inputs) > 0)
+                c.previous_inputs[len(c.previous_inputs)-1] = input.state
+                if first_iteration {
+                    outputs[0].next_state = c.previous_inputs[0]
+                    copy(c.previous_inputs[:len(c.previous_inputs)-1], c.previous_inputs[1:])
+                    changed ||= outputs[0].next_state != outputs[0].state
                 }
-            }
-        }
-    }
 
-    return false
+			case:
+				unreachable()
+			}
+		}
+
+		for _, component in components {
+			for output in &component.outputs {
+				output.state = output.next_state
+			}
+		}
+
+		first_iteration = false
+	}
+}
+
+Connect :: proc(
+	a: ComponentID,
+	out_index: int,
+	b: ComponentID,
+	in_index: int,
+	components: ^map[ComponentID]Component,
+) {
+	output := &components[a].outputs[out_index]
+	input := &components[b].inputs[in_index]
+	input.component = a
+	input.index = out_index
+	append(&output.inputs, input)
 }
 
 main :: proc() {
-    components: [dynamic]Component
-    defer {
-        for component in components {
-            for input_list in component.inputs {
-                delete(input_list)
-            }
-            delete(component.inputs)
-        }
-        delete(components)
-    }
+	components: map[ComponentID]Component
+	defer {
+		for id, _ in components {
+			DestroyComponent(id, &components)
+		}
+		delete(components)
+	}
 
-    AddComponent :: proc(components: ^[dynamic]Component, make_component_func: proc(id: ComponentID) -> Component) -> ComponentID {
-        id := cast(ComponentID) len(components^)
-        append(components, make_component_func(id))
-        return id
-    }
+	NextID :: proc() -> ComponentID {
+		@(static)
+		current_id: ComponentID
+		current_id += 1
+		return current_id
+	}
 
-    AddConnection :: proc(components: []Component, from_id: ComponentID, to_id: ComponentID, input_index: ComponentID) {
-        append(&components[to_id].inputs[input_index], from_id)
-    }
+	switch_a := NextID()
+	components[switch_a] = MakeSwitch(switch_a, true)
 
-    SetState :: proc(components: []Component, component: ComponentID, state: bool) {
-        components[component].next_state = state
-    }
+	not_gate_a := NextID()
+	components[not_gate_a] = MakeNotGate(not_gate_a)
 
-    switch_a := AddComponent(&components, MakeSwitch)
-    SetState(components[:], switch_a, true)
+	switch_b := NextID()
+	components[switch_b] = MakeSwitch(switch_b, true)
 
-    switch_b := AddComponent(&components, MakeSwitch)
-    SetState(components[:], switch_b, true)
+	not_gate_b := NextID()
+	components[not_gate_b] = MakeNotGate(not_gate_b)
 
-    and_gate := AddComponent(&components, MakeAndGate)
-    AddConnection(components[:], switch_a, and_gate, 0)
-    AddConnection(components[:], switch_b, and_gate, 1)
+	or_gate := NextID()
+	components[or_gate] = MakeOrGate(or_gate)
 
-    not_gate := AddComponent(&components, MakeNotGate)
-    AddConnection(components[:], and_gate, not_gate, 0)
+	not_gate_c := NextID()
+	components[not_gate_c] = MakeNotGate(not_gate_c)
 
-    assert(!HasCyclicConnections(components[:]), "the circuit cannot have cyclic connections")
+    delayer := NextID()
+    components[delayer] = MakeDelayer(delayer, 1)
 
-    changes := true
-    for changes {
-        changes = false
+	Connect(switch_a, 0, not_gate_a, 0, &components)
+	Connect(switch_b, 0, not_gate_b, 0, &components)
 
-        for component in &components {
-            if component.update(&component, components[:]) {
-                changes = true
-            }
-        }
+	Connect(not_gate_a, 0, or_gate, 0, &components)
+	Connect(not_gate_b, 0, or_gate, 1, &components)
 
-        for component in &components {
-            component.state = component.next_state
-        }
-    }
+	Connect(or_gate, 0, not_gate_c, 0, &components)
+
+	Connect(not_gate_c, 0, delayer, 0, &components)
+
+	UpdateComponents(&components)
+
+	for id, component in components {
+		fmt.printf("%v = %#v\n", id, component)
+	}
 }
