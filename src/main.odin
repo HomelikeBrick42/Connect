@@ -18,10 +18,11 @@ Output :: struct {
 }
 
 Component :: struct {
-	id:      ComponentID,
-	inputs:  []Input,
-	outputs: []Output,
-	data:    union {
+	id:                       ComponentID,
+	inputs:                   []Input,
+	outputs:                  []Output,
+	ignore_cyclic_dependency: bool,
+	data:                     union {
 		Switch,
 		NotGate,
 		OrGate,
@@ -111,6 +112,7 @@ MakeDelayer :: proc(new_id: ComponentID, delay: int) -> Component {
 		next_state = false,
 		inputs     = make([dynamic]^Input),
 	}
+	ignore_cyclic_dependency = true
 	data = Delayer {
 		previous_inputs = make([]bool, delay),
 	}
@@ -119,6 +121,7 @@ MakeDelayer :: proc(new_id: ComponentID, delay: int) -> Component {
 
 DestroyComponent :: proc(id: ComponentID, components: ^map[ComponentID]Component) {
 	component := components[id]
+
 	switch c in component.data {
 	case Switch:
 	case NotGate:
@@ -172,29 +175,29 @@ UpdateComponents :: proc(components: ^map[ComponentID]Component) {
 				changed ||= outputs[0].next_state != outputs[0].state
 
 			case NotGate:
-                if inputs[0].component < 0 || inputs[0].index < 0 do continue
+				if inputs[0].component < 0 || inputs[0].index < 0 do continue
 				input := components[inputs[0].component].outputs[inputs[0].index]
 				outputs[0].next_state = !input.state
 				changed ||= outputs[0].next_state != outputs[0].state
 
 			case OrGate:
-                if inputs[0].component < 0 || inputs[0].index < 0 do continue
+				if inputs[0].component < 0 || inputs[0].index < 0 do continue
 				input_0 := components[inputs[0].component].outputs[inputs[0].index]
-                if inputs[1].component < 0 || inputs[1].index < 0 do continue
+				if inputs[1].component < 0 || inputs[1].index < 0 do continue
 				input_1 := components[inputs[1].component].outputs[inputs[1].index]
 				outputs[0].next_state = input_0.state || input_1.state
 				changed ||= outputs[0].next_state != outputs[0].state
 
 			case Delayer:
-                if inputs[0].component < 0 || inputs[0].index < 0 do continue
-                input := components[inputs[0].component].outputs[inputs[0].index]
-                assert(len(c.previous_inputs) > 0)
-                c.previous_inputs[len(c.previous_inputs)-1] = input.state
-                if first_iteration {
-                    outputs[0].next_state = c.previous_inputs[0]
-                    copy(c.previous_inputs[:len(c.previous_inputs)-1], c.previous_inputs[1:])
-                    changed ||= outputs[0].next_state != outputs[0].state
-                }
+				if inputs[0].component < 0 || inputs[0].index < 0 do continue
+				input := components[inputs[0].component].outputs[inputs[0].index]
+				assert(len(c.previous_inputs) > 0)
+				c.previous_inputs[len(c.previous_inputs) - 1] = input.state
+				if first_iteration {
+					outputs[0].next_state = c.previous_inputs[0]
+					copy(c.previous_inputs[:len(c.previous_inputs) - 1], c.previous_inputs[1:])
+					changed ||= outputs[0].next_state != outputs[0].state
+				}
 
 			case:
 				unreachable()
@@ -211,6 +214,13 @@ UpdateComponents :: proc(components: ^map[ComponentID]Component) {
 	}
 }
 
+NextID :: proc() -> ComponentID {
+	@(static)
+	current_id: ComponentID
+	current_id += 1
+	return current_id
+}
+
 Connect :: proc(
 	a: ComponentID,
 	out_index: int,
@@ -225,6 +235,49 @@ Connect :: proc(
 	append(&output.inputs, input)
 }
 
+HasCyclicDependency :: proc(components: ^map[ComponentID]Component) -> bool {
+    checked_components := make(map[ComponentID]bool, len(components), context.temp_allocator)
+    defer delete(checked_components)
+
+    for id, _ in components {
+        if checked_components[id] || components[id].ignore_cyclic_dependency {
+            continue
+        }
+
+        seen_components := make(map[ComponentID]bool, len(components), context.temp_allocator)
+        defer delete(seen_components)
+
+        stack := make([dynamic]ComponentID, context.temp_allocator)
+        defer delete(stack)
+
+        append(&stack, id)
+
+        for len(stack) > 0 {
+            id := pop(&stack)
+            component, ok := components[id]
+            assert(ok, "invalid component index")
+
+            if seen_components[id] {
+                return true
+            }
+            seen_components[id] = true
+            checked_components[id] = true
+
+            if components[id].ignore_cyclic_dependency {
+                continue
+            }
+
+            for input in component.inputs {
+                if input.component > 0 {
+                    append(&stack, input.component)
+                }
+            }
+        }
+    }
+
+    return false
+}
+
 main :: proc() {
 	components: map[ComponentID]Component
 	defer {
@@ -232,13 +285,6 @@ main :: proc() {
 			DestroyComponent(id, &components)
 		}
 		delete(components)
-	}
-
-	NextID :: proc() -> ComponentID {
-		@(static)
-		current_id: ComponentID
-		current_id += 1
-		return current_id
 	}
 
 	switch_a := NextID()
@@ -259,8 +305,8 @@ main :: proc() {
 	not_gate_c := NextID()
 	components[not_gate_c] = MakeNotGate(not_gate_c)
 
-    delayer := NextID()
-    components[delayer] = MakeDelayer(delayer, 1)
+	delayer := NextID()
+	components[delayer] = MakeDelayer(delayer, 1)
 
 	Connect(switch_a, 0, not_gate_a, 0, &components)
 	Connect(switch_b, 0, not_gate_b, 0, &components)
@@ -271,6 +317,11 @@ main :: proc() {
 	Connect(or_gate, 0, not_gate_c, 0, &components)
 
 	Connect(not_gate_c, 0, delayer, 0, &components)
+
+    if HasCyclicDependency(&components) {
+        fmt.eprintln("circuit has a cyclic dependency")
+        os.exit(1)
+    }
 
 	UpdateComponents(&components)
 
