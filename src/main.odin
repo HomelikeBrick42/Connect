@@ -4,27 +4,50 @@ import "core:os"
 import "core:fmt"
 import "core:reflect"
 
+Data :: struct {
+	running: bool,
+	window:  ^Window,
+}
+
 main :: proc() {
 	// ComponentTest()
 
-	window, ok := Window_Create(640, 480, "Hello").?
+	using data := new(Data)
+	defer free(data)
+
+	ok: bool
+	window, ok = Window_Create(640, 480, "Hello").?
 	if !ok {
 		fmt.eprintln("Failed to create window")
 		os.exit(1)
 	}
 	defer Window_Destroy(window)
 
-	running := true
-	window.user_data = running
+	ok = Renderer_Init(window)
+	if !ok {
+		fmt.eprintln("Failed to create renderer")
+		os.exit(1)
+	}
+	defer Renderer_Shutdown()
 
+	window.user_data = data
 	window.close_callback = proc(window: ^Window) {
-		running := &window.user_data.(bool)
-		running^ = false
+		using data := window.user_data.(^Data)
+		running = false
+	}
+	window.resize_callback = proc(window: ^Window) {
+		using data := window.user_data.(^Data)
+
+		Renderer_OnResize(window.width, window.height)
 	}
 
+	running = true
 	Window_Show(window)
 	for running {
 		Window_Update(window)
+
+		Renderer_Clear({0.1, 0.1, 0.1, 1.0})
+		Renderer_Present()
 	}
 	Window_Hide(window)
 }
