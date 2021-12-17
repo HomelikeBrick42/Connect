@@ -4,9 +4,17 @@ import "core:os"
 import "core:fmt"
 import "core:reflect"
 
+import "core:math"
+import "core:math/linalg/glsl"
+
+Vertex :: struct {
+	position: glsl.vec3,
+}
+
 Data :: struct {
-	running: bool,
-	window:  ^Window,
+	running:       bool,
+	window:        ^Window,
+	triangle_mesh: Mesh,
 }
 
 main :: proc() {
@@ -29,6 +37,20 @@ main :: proc() {
 		os.exit(1)
 	}
 	defer Renderer_Shutdown()
+
+	triangle_mesh, ok = Mesh_Create(
+		[]Vertex{
+			{position = {+0.0, +0.5, 0.0}},
+			{position = {+0.5, -0.5, 0.0}},
+			{position = {-0.5, -0.5, 0.0}},
+		},
+		[]u32{0, 1, 2},
+		{{type = .Float3, normalized = false}},
+	).?
+	if !ok {
+		fmt.eprintln("Failed to create triangle mesh")
+		os.exit(1)
+	}
 
 	window.user_data = data
 	window.close_callback = proc(window: ^Window) {

@@ -1,6 +1,8 @@
 package main
 
+import "core:fmt"
 import "core:dynlib"
+import "core:runtime"
 import "core:math/linalg/glsl"
 
 import gl "vendor:OpenGL"
@@ -95,6 +97,46 @@ Renderer_Init :: proc(window: ^Window) -> bool {
 
 			(cast(^rawptr)p)^ = ptr
 		})
+
+	when ODIN_DEBUG {
+
+		temp := context
+
+		gl.Enable(gl.DEBUG_OUTPUT)
+		gl.Enable(gl.DEBUG_OUTPUT_SYNCHRONOUS)
+		gl.DebugMessageCallback(
+			proc "c" (
+				source,
+				type,
+				id,
+				severity: u32,
+				length: i32,
+				message: cstring,
+				userParam: rawptr,
+			) {
+				context = (cast(^runtime.Context)userParam)^
+
+				switch severity {
+				case gl.DEBUG_SEVERITY_HIGH:
+					fmt.eprintf("gl.DEBUG_SEVERITY_HIGH: '{}'\n", message)
+
+				case gl.DEBUG_SEVERITY_MEDIUM:
+					fmt.eprintf("gl.DEBUG_SEVERITY_MEDIUM: '{}'\n", message)
+
+				case gl.DEBUG_SEVERITY_LOW:
+					fmt.eprintf("gl.DEBUG_SEVERITY_LOW: '{}'\n", message)
+
+				case gl.DEBUG_SEVERITY_NOTIFICATION:
+					fmt.printf("gl.DEBUG_SEVERITY_NOTIFICATION: '{}'\n", message)
+
+				case:
+					fmt.eprintf("gl.DEBUG_SEVERITY_UNKNOWN: '{}'\n", message)
+				}
+			},
+			&temp,
+		)
+
+	}
 
 	return true
 }
