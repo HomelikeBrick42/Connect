@@ -41,6 +41,7 @@ Mesh :: struct {
 	_vertex_array:  u32,
 	_vertex_buffer: u32,
 	_index_buffer:  u32,
+	_index_count:   uint,
 }
 
 Mesh_Create :: proc(
@@ -70,7 +71,7 @@ Mesh_SetVertices :: proc(mesh: ^Mesh, vertices: []$T) {
 	gl.BufferData(
 		gl.ARRAY_BUFFER,
 		len(vertices) * size_of(T),
-		raw_data(vertices),
+		&vertices[0],
 		gl.STATIC_DRAW,
 	)
 }
@@ -79,11 +80,12 @@ Mesh_SetIndices :: proc(mesh: ^Mesh, indices: []u32) {
 	gl.BindVertexArray(mesh._vertex_array)
 	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh._index_buffer)
 	gl.BufferData(
-		gl.ARRAY_BUFFER,
+		gl.ELEMENT_ARRAY_BUFFER,
 		len(indices) * size_of(u32),
-		raw_data(indices),
+		&indices[0],
 		gl.STATIC_DRAW,
 	)
+	mesh._index_count = len(indices)
 }
 
 Mesh_SetLayout :: proc(mesh: ^Mesh, layout: []VertexLayoutElement) {

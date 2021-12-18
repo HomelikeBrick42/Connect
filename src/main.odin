@@ -67,13 +67,17 @@ main :: proc() {
 	}
 	defer Shader_Destroy(&main_shader)
 
+	triangle_vertices := [?]Vertex{
+		{position = {+0.0, +0.5, 0.0}},
+		{position = {+0.5, -0.5, 0.0}},
+		{position = {-0.5, -0.5, 0.0}},
+	}
+
+	triangle_indices := [?]u32{0, 1, 2}
+
 	triangle_mesh, ok = Mesh_Create(
-		[]Vertex{
-			{position = {+0.0, +0.5, 0.0}},
-			{position = {+0.5, -0.5, 0.0}},
-			{position = {-0.5, -0.5, 0.0}},
-		},
-		[]u32{0, 1, 2},
+		triangle_vertices[:],
+		triangle_indices[:],
 		{{type = .Float3, normalized = false}},
 	).?
 	if !ok {
@@ -98,6 +102,7 @@ main :: proc() {
 		Window_Update(window)
 
 		Renderer_Clear({0.1, 0.1, 0.1, 1.0})
+		Renderer_DrawMesh(&triangle_mesh, &main_shader, glsl.vec4{1.0, 0.0, 0.0, 1.0})
 		Renderer_Present()
 	}
 	Window_Hide(window)

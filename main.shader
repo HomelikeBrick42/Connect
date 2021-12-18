@@ -2,7 +2,7 @@
 
 #version 440 core
 
-uniform vec4 u_Color = vec4(1.0, 0.0, 0.0, 1.0);
+uniform vec4 u_Color = vec4(1.0);
 
 #shader vertex
 
