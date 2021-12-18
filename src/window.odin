@@ -1,5 +1,6 @@
 package main
 
+import "core:fmt"
 import "core:runtime"
 
 when ODIN_OS == "windows" {
@@ -101,6 +102,7 @@ when ODIN_OS == "windows" {
 
 		window._instance = auto_cast get_module_handle_a(nil)
 		if window._instance == nil {
+			fmt.eprintf("Failed to get the current module handle {}\n", get_last_error())
 			free(window)
 			return nil
 		}
@@ -115,6 +117,7 @@ when ODIN_OS == "windows" {
 				class_name = WindowClassName,
 			}
 			if register_class_ex_a(&window_class) == 0 {
+				fmt.eprintf("Failed to regiser window class {}\n", get_last_error())
 				free(window)
 				return nil
 			}
@@ -146,12 +149,14 @@ when ODIN_OS == "windows" {
 			window,
 		)
 		if window._handle == nil {
+			fmt.eprintf("Failed to create window {}\n", get_last_error())
 			free(window)
 			return nil
 		}
 
 		window._dc = get_dc(window._handle)
 		if window._dc == nil {
+			fmt.eprintf("Failed to get the device context {}\n", get_last_error())
 			destroy_window(window._handle)
 			free(window)
 			return nil

@@ -3,6 +3,7 @@ package main
 import "core:os"
 import "core:fmt"
 import "core:reflect"
+import "core:strings"
 
 import "core:math"
 import "core:math/linalg/glsl"
@@ -14,7 +15,28 @@ Vertex :: struct {
 Data :: struct {
 	running:       bool,
 	window:        ^Window,
+	main_shader:   Shader,
 	triangle_mesh: Mesh,
+}
+
+main2 :: proc() {
+	bytes, _ := os.read_entire_file("main.shader")
+	source := string(bytes)
+	sections := strings.split(source, "#shader")
+	for section in sections {
+		section := strings.trim(section, " \n\r\t")
+		if len(section) == 0 do continue
+
+		type := "vertex"
+		if strings.has_prefix(section, type) {
+			fmt.println("found")
+			fmt.println("----------------------------")
+			fmt.println(section[len(type):])
+			fmt.println("----------------------------")
+		} else {
+			fmt.println("not found")
+		}
+	}
 }
 
 main :: proc() {
@@ -38,6 +60,13 @@ main :: proc() {
 	}
 	defer Renderer_Shutdown()
 
+	main_shader, ok = Shader_Create("main.shader").?
+	if !ok {
+		fmt.eprintln("Failed to create main shader")
+		os.exit(1)
+	}
+	defer Shader_Destroy(&main_shader)
+
 	triangle_mesh, ok = Mesh_Create(
 		[]Vertex{
 			{position = {+0.0, +0.5, 0.0}},
@@ -51,6 +80,7 @@ main :: proc() {
 		fmt.eprintln("Failed to create triangle mesh")
 		os.exit(1)
 	}
+	defer Mesh_Destroy(&triangle_mesh)
 
 	window.user_data = data
 	window.close_callback = proc(window: ^Window) {
@@ -59,7 +89,6 @@ main :: proc() {
 	}
 	window.resize_callback = proc(window: ^Window) {
 		using data := window.user_data.(^Data)
-
 		Renderer_OnResize(window.width, window.height)
 	}
 
