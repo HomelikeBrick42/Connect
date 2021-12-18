@@ -15,6 +15,42 @@ Vertex :: struct {
 	normal:   glsl.vec3,
 }
 
+Transform :: struct {
+	position: glsl.vec3,
+	rotation: glsl.quat,
+	scale:    glsl.vec3,
+}
+
+Transform_Create :: proc(
+	position: Maybe(glsl.vec3) = nil,
+	rotation: Maybe(glsl.quat) = nil,
+	scale: Maybe(glsl.vec3) = nil,
+) -> Transform {
+	transform: Transform
+	transform.position = position.? or_else glsl.vec3{0.0, 0.0, 0.0}
+	transform.rotation = rotation.? or_else glsl.quatAxisAngle(glsl.vec3{0.0, 1.0, 0.0}, 0.0)
+	transform.scale = scale.? or_else glsl.vec3{1.0, 1.0, 1.0}
+	return transform
+}
+
+Transform_ToMatrix :: proc(using transform: ^Transform) -> glsl.mat4 {
+	return glsl.mat4Translate(position) * glsl.mat4FromQuat(rotation) * glsl.mat4Scale(scale)
+}
+
+Entity :: struct {
+	using transform: Transform,
+	mesh:            ^Mesh,
+	color:           glsl.vec4,
+}
+
+Entity_Create :: proc(mesh: ^Mesh, color: glsl.vec4) -> Entity {
+	entity: Entity
+	entity.transform = Transform_Create()
+	entity.mesh = mesh
+	entity.color = color
+	return entity
+}
+
 Data :: struct {
 	running:                  bool,
 	window:                   ^Window,
@@ -27,6 +63,7 @@ Data :: struct {
 	camera_rotation:          glsl.quat,
 	keys:                     [Key]bool,
 	mouse_movement:           glsl.vec2,
+	entities:                 [dynamic]Entity,
 }
 
 main2 :: proc() {
@@ -54,6 +91,7 @@ main :: proc() {
 
 	using data := new(Data)
 	defer free(data)
+	defer delete(entities)
 
 	ok: bool
 	window, ok = Window_Create(640, 480, "Hello").?
@@ -203,6 +241,8 @@ main :: proc() {
 	camera_position = {0.0, 0.0, 2.0}
 	camera_rotation = glsl.quatAxisAngle({0.0, 1.0, 0.0}, 0.0)
 
+	append(&entities, Entity_Create(&cube_mesh, {1.0, 0.3, 0.0, 1.0}))
+
 	running = true
 	last_time := GetTime()
 	Window_Show(window)
@@ -253,23 +293,31 @@ main :: proc() {
 		{
 			Renderer_Clear({0.2, 0.4, 0.8, 1.0})
 
-			Renderer_Begin(camera_position, camera_rotation, camera_projection_matrix, true)
-			Renderer_DrawMesh(
-				&cube_mesh,
-				&main_shader,
-				glsl.identity(glsl.mat4),
-				glsl.vec4{1.0, 0.3, 0.0, 1.0},
-			)
-			Renderer_End()
+			// World
+			{
+				Renderer_Begin(camera_position, camera_rotation, camera_projection_matrix, true)
+				for entity in &entities {
+					Renderer_DrawMesh(
+						entity.mesh,
+						&main_shader,
+						Transform_ToMatrix(&entity.transform),
+						entity.color,
+					)
+				}
+				Renderer_End()
+			}
 
-			Renderer_Begin({}, {}, ui_projection_matrix, false)
-			Renderer_DrawMesh(
-				&crosshair_mesh,
-				&main_shader,
-				glsl.mat4Scale(6.0),
-				glsl.vec4{0.0, 0.0, 0.0, 0.6},
-			)
-			Renderer_End()
+			// UI
+			{
+				Renderer_Begin({}, {}, ui_projection_matrix, false)
+				Renderer_DrawMesh(
+					&crosshair_mesh,
+					&main_shader,
+					glsl.mat4Scale(6.0),
+					glsl.vec4{0.0, 0.0, 0.0, 0.6},
+				)
+				Renderer_End()
+			}
 
 			Renderer_Present()
 		}
