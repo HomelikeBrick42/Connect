@@ -68,12 +68,7 @@ Mesh_Destroy :: proc(mesh: ^Mesh) {
 Mesh_SetVertices :: proc(mesh: ^Mesh, vertices: []$T) {
 	gl.BindVertexArray(mesh._vertex_array)
 	gl.BindBuffer(gl.ARRAY_BUFFER, mesh._vertex_buffer)
-	gl.BufferData(
-		gl.ARRAY_BUFFER,
-		len(vertices) * size_of(T),
-		&vertices[0],
-		gl.STATIC_DRAW,
-	)
+	gl.BufferData(gl.ARRAY_BUFFER, len(vertices) * size_of(T), &vertices[0], gl.STATIC_DRAW)
 }
 
 Mesh_SetIndices :: proc(mesh: ^Mesh, indices: []u32) {

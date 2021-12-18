@@ -44,11 +44,11 @@ Shader_Create :: proc(filepath: string) -> Maybe(Shader) {
 		}
 	}
 
-    vertex_shader := gl.CreateShader(gl.VERTEX_SHADER)
+	vertex_shader := gl.CreateShader(gl.VERTEX_SHADER)
 	vertex_source := cstring(raw_data(strings.to_string(vertex_source_builder)))
 	vertex_source_length := cast(i32)len(vertex_source)
 	gl.ShaderSource(vertex_shader, 1, &vertex_source, &vertex_source_length)
-    gl.CompileShader(vertex_shader)
+	gl.CompileShader(vertex_shader)
 
 	vertex_shader_compiled: i32
 	gl.GetShaderiv(vertex_shader, gl.COMPILE_STATUS, &vertex_shader_compiled)
@@ -58,11 +58,11 @@ Shader_Create :: proc(filepath: string) -> Maybe(Shader) {
 		return nil
 	}
 
-    fragment_shader := gl.CreateShader(gl.FRAGMENT_SHADER)
+	fragment_shader := gl.CreateShader(gl.FRAGMENT_SHADER)
 	fragment_source := cstring(raw_data(strings.to_string(fragment_source_builder)))
 	fragment_source_length := cast(i32)len(fragment_source)
 	gl.ShaderSource(fragment_shader, 1, &fragment_source, &fragment_source_length)
-    gl.CompileShader(fragment_shader)
+	gl.CompileShader(fragment_shader)
 
 	fragment_shader_compiled: i32
 	gl.GetShaderiv(fragment_shader, gl.COMPILE_STATUS, &fragment_shader_compiled)
@@ -93,7 +93,7 @@ Shader_Create :: proc(filepath: string) -> Maybe(Shader) {
 	gl.DeleteShader(vertex_shader)
 	gl.DeleteShader(fragment_shader)
 
-    return Shader{ _id = program }
+	return Shader{_id = program}
 }
 
 Shader_Destroy :: proc(shader: ^Shader) {

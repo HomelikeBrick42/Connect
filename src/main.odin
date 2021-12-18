@@ -137,29 +137,8 @@ main :: proc() {
 	camera_position = {0.0, 0.0, 2.0}
 	camera_rotation = {}
 
-	GetTime :: proc() -> f64 {
-		using win32
-		@(static)
-		initialized := false
-		@(static)
-		inverse_frequency := 0.0
-		@(static)
-		start_time: i64 = 0
-		if !initialized {
-			query_performance_counter(&start_time)
-			frequency: i64
-			query_performance_frequency(&frequency)
-			inverse_frequency = 1.0 / cast(f64)frequency
-			initialized = true
-		}
-		counter: i64
-		query_performance_counter(&counter)
-		return cast(f64)counter * inverse_frequency
-	}
-
-	last_time := GetTime()
-
 	running = true
+	last_time := GetTime()
 	Window_Show(window)
 	for running {
 		Window_Update(window)
@@ -199,6 +178,30 @@ main :: proc() {
 		Renderer_Present()
 	}
 	Window_Hide(window)
+}
+
+GetTime :: proc() -> f64 {
+	when ODIN_OS == "windows" {
+		using win32
+		@(static)
+		initialized := false
+		@(static)
+		inverse_frequency := 0.0
+		@(static)
+		start_time: i64 = 0
+		if !initialized {
+			query_performance_counter(&start_time)
+			frequency: i64
+			query_performance_frequency(&frequency)
+			inverse_frequency = 1.0 / cast(f64)frequency
+			initialized = true
+		}
+		counter: i64
+		query_performance_counter(&counter)
+		return cast(f64)counter * inverse_frequency
+	} else {
+		#assert(false, "unsupported platform")
+	}
 }
 
 ComponentTest :: proc() {
