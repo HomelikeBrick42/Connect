@@ -13,9 +13,11 @@ when ODIN_OS == "windows" {
 
 	@(private = "file")
 	Renderer :: struct {
-		window:      ^Window,
-		_opengl_lib: dynlib.Library,
-		_context:    win32.Hglrc,
+		window:             ^Window,
+		_opengl_lib:        dynlib.Library,
+		_context:           win32.Hglrc,
+		_view_matrix:       glsl.mat4,
+		_projection_matrix: glsl.mat4,
 	}
 
 } else {
@@ -174,6 +176,9 @@ Renderer_Init :: proc(window: ^Window) -> bool {
 
 	}
 
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
 	return true
 }
 
@@ -213,12 +218,55 @@ Renderer_Clear :: proc(color: glsl.vec4) {
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 }
 
-Renderer_DrawMesh :: proc(mesh: ^Mesh, shader: ^Shader, color: Maybe(glsl.vec4) = nil) {
+Renderer_Begin :: proc(
+	camera_position: glsl.vec3,
+	camera_rotation: glsl.quat,
+	projection_matrix: glsl.mat4,
+	depth_testing: bool,
+) {
+	if depth_testing {
+		gl.Enable(gl.DEPTH_TEST)
+	} else {
+		gl.Disable(gl.DEPTH_TEST)
+	}
+	renderer._view_matrix = glsl.inverse_mat4(
+		glsl.mat4Translate(camera_position) * glsl.mat4FromQuat(camera_rotation),
+	)
+	renderer._projection_matrix = projection_matrix
+}
+
+Renderer_End :: proc() {
+}
+
+Renderer_DrawMesh :: proc(
+	mesh: ^Mesh,
+	shader: ^Shader,
+	model_matrix: Maybe(glsl.mat4) = nil,
+	color: Maybe(glsl.vec4) = nil,
+) {
 	gl.UseProgram(shader._id)
-	location := gl.GetUniformLocation(shader._id, "u_Color")
-	if location >= 0 {
+	color_location := gl.GetUniformLocation(shader._id, "u_Color")
+	if color_location >= 0 {
 		color := color.? or_else glsl.vec4{1.0, 1.0, 1.0, 1.0}
-		gl.Uniform4fv(location, 1, &color[0])
+		gl.Uniform4fv(color_location, 1, &color[0])
+	}
+	model_location := gl.GetUniformLocation(shader._id, "u_Model")
+	if model_location >= 0 {
+		model := model_matrix.? or_else glsl.identity(glsl.mat4)
+		gl.UniformMatrix4fv(model_location, 1, gl.FALSE, &model[0][0])
+	}
+	view_location := gl.GetUniformLocation(shader._id, "u_View")
+	if view_location >= 0 {
+		gl.UniformMatrix4fv(view_location, 1, gl.FALSE, &renderer._view_matrix[0][0])
+	}
+	projection_location := gl.GetUniformLocation(shader._id, "u_Projection")
+	if projection_location >= 0 {
+		gl.UniformMatrix4fv(
+			projection_location,
+			1,
+			gl.FALSE,
+			&renderer._projection_matrix[0][0],
+		)
 	}
 	gl.BindVertexArray(mesh._vertex_array)
 	gl.BindBuffer(gl.ARRAY_BUFFER, mesh._vertex_buffer)

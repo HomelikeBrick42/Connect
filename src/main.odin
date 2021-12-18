@@ -4,6 +4,7 @@ import "core:os"
 import "core:fmt"
 import "core:reflect"
 import "core:strings"
+import "core:sys/win32"
 
 import "core:math"
 import "core:math/linalg/glsl"
@@ -13,10 +14,16 @@ Vertex :: struct {
 }
 
 Data :: struct {
-	running:       bool,
-	window:        ^Window,
-	main_shader:   Shader,
-	triangle_mesh: Mesh,
+	running:                  bool,
+	window:                   ^Window,
+	main_shader:              Shader,
+	crosshair_mesh:           Mesh,
+	triangle_mesh:            Mesh,
+	ui_projection_matrix:     glsl.mat4,
+	camera_projection_matrix: glsl.mat4,
+	camera_position:          glsl.vec3,
+	camera_rotation:          glsl.quat,
+	keys:                     [Key]bool,
 }
 
 main2 :: proc() {
@@ -67,17 +74,29 @@ main :: proc() {
 	}
 	defer Shader_Destroy(&main_shader)
 
-	triangle_vertices := [?]Vertex{
-		{position = {+0.0, +0.5, 0.0}},
-		{position = {+0.5, -0.5, 0.0}},
-		{position = {-0.5, -0.5, 0.0}},
+	crosshair_mesh, ok = Mesh_Create(
+		[]Vertex{
+			{position = {-0.5, +0.5, 0.0}},
+			{position = {+0.5, +0.5, 0.0}},
+			{position = {+0.5, -0.5, 0.0}},
+			{position = {-0.5, -0.5, 0.0}},
+		},
+		[]u32{0, 1, 2, 0, 2, 3},
+		{{type = .Float3, normalized = false}},
+	).?
+	if !ok {
+		fmt.eprintln("Failed to create crosshair mesh")
+		os.exit(1)
 	}
-
-	triangle_indices := [?]u32{0, 1, 2}
+	defer Mesh_Destroy(&crosshair_mesh)
 
 	triangle_mesh, ok = Mesh_Create(
-		triangle_vertices[:],
-		triangle_indices[:],
+		[]Vertex{
+			{position = {+0.0, +0.5, 0.0}},
+			{position = {+0.5, -0.5, 0.0}},
+			{position = {-0.5, -0.5, 0.0}},
+		},
+		[]u32{0, 1, 2},
 		{{type = .Float3, normalized = false}},
 	).?
 	if !ok {
@@ -94,15 +113,89 @@ main :: proc() {
 	window.resize_callback = proc(window: ^Window) {
 		using data := window.user_data.(^Data)
 		Renderer_OnResize(window.width, window.height)
+		camera_projection_matrix = glsl.mat4Perspective(
+			60.0 * math.RAD_PER_DEG,
+			cast(f32)window.width / cast(f32)window.height,
+			0.001,
+			1000.0,
+		)
+		ui_projection_matrix = glsl.mat4Ortho3d(
+			-cast(f32)window.width / 2.0,
+			+cast(f32)window.width / 2.0,
+			-cast(f32)window.height / 2.0,
+			+cast(f32)window.height / 2.0,
+			-1.0,
+			1.0,
+		)
 	}
+	window.key_callback = proc(window: ^Window, key: Key, pressed: bool) {
+		using data := window.user_data.(^Data)
+		if key == .Unknown do return
+		keys[key] = pressed
+	}
+
+	camera_position = {0.0, 0.0, 2.0}
+	camera_rotation = {}
+
+	GetTime :: proc() -> f64 {
+		using win32
+		@(static)
+		initialized := false
+		@(static)
+		inverse_frequency := 0.0
+		@(static)
+		start_time: i64 = 0
+		if !initialized {
+			query_performance_counter(&start_time)
+			frequency: i64
+			query_performance_frequency(&frequency)
+			inverse_frequency = 1.0 / cast(f64)frequency
+			initialized = true
+		}
+		counter: i64
+		query_performance_counter(&counter)
+		return cast(f64)counter * inverse_frequency
+	}
+
+	last_time := GetTime()
 
 	running = true
 	Window_Show(window)
 	for running {
 		Window_Update(window)
 
-		Renderer_Clear({0.1, 0.1, 0.1, 1.0})
-		Renderer_DrawMesh(&triangle_mesh, &main_shader, glsl.vec4{1.0, 0.0, 0.0, 1.0})
+		time := GetTime()
+		dt := cast(f32)(time - last_time)
+		last_time = time
+
+		CameraSpeed :: 5.0
+		if keys[.W] do camera_position.z -= CameraSpeed * dt
+		if keys[.S] do camera_position.z += CameraSpeed * dt
+		if keys[.A] do camera_position.x -= CameraSpeed * dt
+		if keys[.D] do camera_position.x += CameraSpeed * dt
+		if keys[.Q] do camera_position.y -= CameraSpeed * dt
+		if keys[.E] do camera_position.y += CameraSpeed * dt
+
+		Renderer_Clear({0.2, 0.4, 0.8, 1.0})
+
+		Renderer_Begin(camera_position, camera_rotation, camera_projection_matrix, true)
+		Renderer_DrawMesh(
+			&triangle_mesh,
+			&main_shader,
+			glsl.identity(glsl.mat4),
+			glsl.vec4{1.0, 0.3, 0.0, 1.0},
+		)
+		Renderer_End()
+
+		Renderer_Begin({}, {}, ui_projection_matrix, false)
+		Renderer_DrawMesh(
+			&crosshair_mesh,
+			&main_shader,
+			glsl.mat4Scale(4.0),
+			glsl.vec4{0.0, 0.0, 0.0, 0.6},
+		)
+		Renderer_End()
+
 		Renderer_Present()
 	}
 	Window_Hide(window)

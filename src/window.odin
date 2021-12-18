@@ -3,6 +3,16 @@ package main
 import "core:fmt"
 import "core:runtime"
 
+Key :: enum {
+	Unknown,
+	W,
+	A,
+	S,
+	D,
+	Q,
+	E,
+}
+
 when ODIN_OS == "windows" {
 
 	import "core:sys/win32"
@@ -12,6 +22,7 @@ when ODIN_OS == "windows" {
 		user_data:       any,
 		close_callback:  proc(window: ^Window),
 		resize_callback: proc(window: ^Window),
+		key_callback:    proc(window: ^Window, key: Key, pressed: bool),
 		_instance:       win32.Hinstance,
 		_handle:         win32.Hwnd,
 		_dc:             win32.Hdc,
@@ -75,17 +86,40 @@ when ODIN_OS == "windows" {
 			}
 
 		case WM_SIZE:
-			{
-				if window.resize_callback != nil {
-					rect: Rect
-					get_client_rect(hwnd, &rect)
-					width := rect.right - rect.left
-					height := rect.bottom - rect.top
-					if width > 0 && height > 0 {
-						window.width = cast(uint)width
-						window.height = cast(uint)height
-						window.resize_callback(window)
-					}
+			if window.resize_callback != nil {
+				rect: Rect
+				get_client_rect(hwnd, &rect)
+				width := rect.right - rect.left
+				height := rect.bottom - rect.top
+				if width > 0 && height > 0 {
+					window.width = cast(uint)width
+					window.height = cast(uint)height
+					window.resize_callback(window)
+				}
+			}
+
+		case WM_KEYDOWN, WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP:
+			if window.key_callback != nil {
+				pressed := message == WM_KEYDOWN || message == WM_SYSKEYDOWN
+				key: Key
+				switch w_param {
+				case 'W':
+					key = .W
+				case 'A':
+					key = .A
+				case 'S':
+					key = .S
+				case 'D':
+					key = .D
+				case 'Q':
+					key = .Q
+				case 'E':
+					key = .E
+				case:
+					key = .Unknown
+				}
+				for _ in 0 ..< l_param & 0xF {
+					window.key_callback(window, key, pressed)
 				}
 			}
 
