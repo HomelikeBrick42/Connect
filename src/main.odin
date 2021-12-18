@@ -12,6 +12,7 @@ import "core:math/linalg/glsl"
 
 Vertex :: struct {
 	position: glsl.vec3,
+	normal:   glsl.vec3,
 }
 
 Data :: struct {
@@ -19,7 +20,7 @@ Data :: struct {
 	window:                   ^Window,
 	main_shader:              Shader,
 	crosshair_mesh:           Mesh,
-	triangle_mesh:            Mesh,
+	cube_mesh:                Mesh,
 	ui_projection_matrix:     glsl.mat4,
 	camera_projection_matrix: glsl.mat4,
 	camera_position:          glsl.vec3,
@@ -92,20 +93,78 @@ main :: proc() {
 	}
 	defer Mesh_Destroy(&crosshair_mesh)
 
-	triangle_mesh, ok = Mesh_Create(
+	cube_mesh, ok = Mesh_Create(
 		[]Vertex{
-			{position = {+0.0, +0.5, 0.0}},
-			{position = {+0.5, -0.5, 0.0}},
-			{position = {-0.5, -0.5, 0.0}},
+			{position = {-0.5, +0.5, +0.5}, normal = {0.0, 0.0, +1.0}},
+			{position = {+0.5, +0.5, +0.5}, normal = {0.0, 0.0, +1.0}},
+			{position = {+0.5, -0.5, +0.5}, normal = {0.0, 0.0, +1.0}},
+			{position = {-0.5, -0.5, +0.5}, normal = {0.0, 0.0, +1.0}},
+			{position = {-0.5, +0.5, -0.5}, normal = {0.0, 0.0, -1.0}},
+			{position = {+0.5, +0.5, -0.5}, normal = {0.0, 0.0, -1.0}},
+			{position = {+0.5, -0.5, -0.5}, normal = {0.0, 0.0, -1.0}},
+			{position = {-0.5, -0.5, -0.5}, normal = {0.0, 0.0, -1.0}},
+			{position = {+0.5, -0.5, +0.5}, normal = {+1.0, 0.0, 0.0}},
+			{position = {+0.5, +0.5, +0.5}, normal = {+1.0, 0.0, 0.0}},
+			{position = {+0.5, +0.5, -0.5}, normal = {+1.0, 0.0, 0.0}},
+			{position = {+0.5, -0.5, -0.5}, normal = {+1.0, 0.0, 0.0}},
+			{position = {-0.5, -0.5, +0.5}, normal = {-1.0, 0.0, 0.0}},
+			{position = {-0.5, +0.5, +0.5}, normal = {-1.0, 0.0, 0.0}},
+			{position = {-0.5, +0.5, -0.5}, normal = {-1.0, 0.0, 0.0}},
+			{position = {-0.5, -0.5, -0.5}, normal = {-1.0, 0.0, 0.0}},
+			{position = {-0.5, +0.5, +0.5}, normal = {0.0, +1.0, 0.0}},
+			{position = {+0.5, +0.5, +0.5}, normal = {0.0, +1.0, 0.0}},
+			{position = {+0.5, +0.5, -0.5}, normal = {0.0, +1.0, 0.0}},
+			{position = {-0.5, +0.5, -0.5}, normal = {0.0, +1.0, 0.0}},
+			{position = {-0.5, -0.5, +0.5}, normal = {0.0, -1.0, 0.0}},
+			{position = {+0.5, -0.5, +0.5}, normal = {0.0, -1.0, 0.0}},
+			{position = {+0.5, -0.5, -0.5}, normal = {0.0, -1.0, 0.0}},
+			{position = {-0.5, -0.5, -0.5}, normal = {0.0, -1.0, 0.0}},
 		},
-		[]u32{0, 1, 2},
-		{{type = .Float3, normalized = false}},
+		[]u32{
+			0,
+			1,
+			2,
+			0,
+			2,
+			3,
+			6,
+			5,
+			4,
+			7,
+			6,
+			4,
+			8,
+			9,
+			10,
+			8,
+			10,
+			11,
+			14,
+			13,
+			12,
+			15,
+			14,
+			12,
+			16,
+			17,
+			18,
+			16,
+			18,
+			19,
+			22,
+			21,
+			20,
+			23,
+			22,
+			20,
+		},
+		{{type = .Float3, normalized = false}, {type = .Float3, normalized = false}},
 	).?
 	if !ok {
-		fmt.eprintln("Failed to create triangle mesh")
+		fmt.eprintln("Failed to create cube mesh")
 		os.exit(1)
 	}
-	defer Mesh_Destroy(&triangle_mesh)
+	defer Mesh_Destroy(&cube_mesh)
 
 	window.user_data = data
 	window.close_callback = proc(window: ^Window) {
@@ -196,7 +255,7 @@ main :: proc() {
 
 			Renderer_Begin(camera_position, camera_rotation, camera_projection_matrix, true)
 			Renderer_DrawMesh(
-				&triangle_mesh,
+				&cube_mesh,
 				&main_shader,
 				glsl.identity(glsl.mat4),
 				glsl.vec4{1.0, 0.3, 0.0, 1.0},

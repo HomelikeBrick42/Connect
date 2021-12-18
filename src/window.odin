@@ -203,6 +203,7 @@ when ODIN_OS == "windows" {
 	Window_Create :: proc(width, height: uint, title: cstring) -> Maybe(^Window) {
 		using win32
 		window := new(Window)
+		window._context = context
 
 		window._instance = auto_cast get_module_handle_a(nil)
 		if window._instance == nil {
@@ -283,6 +284,7 @@ when ODIN_OS == "windows" {
 
 	Window_Destroy :: proc(window: ^Window) {
 		using win32
+		window._context = context
 		if window.mouse_disabled {
 			Window_EnableMouse(window)
 		}
@@ -303,15 +305,19 @@ when ODIN_OS == "windows" {
 
 	Window_Show :: proc(window: ^Window) {
 		using win32
+		window._context = context
 		show_window(window._handle, SW_SHOW)
 	}
 
 	Window_Hide :: proc(window: ^Window) {
 		using win32
+		window._context = context
 		show_window(window._handle, SW_HIDE)
 	}
 
 	Window_EnableMouse :: proc(window: ^Window) {
+		using win32
+		window._context = context
 		for ShowCursor(true) < 0 {}
 		ClipCursor(nil)
 		window.mouse_disabled = false
@@ -319,6 +325,7 @@ when ODIN_OS == "windows" {
 
 	Window_DisableMouse :: proc(window: ^Window) {
 		using win32
+		window._context = context
 		for ShowCursor(false) >= 0 {}
 		rect: Rect
 		get_client_rect(window._handle, &rect)
