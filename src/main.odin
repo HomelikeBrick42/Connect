@@ -240,13 +240,13 @@ main :: proc() {
 			camera_right = linalg.mul(camera_rotation, glsl.vec3{-1.0, 0.0, 0.0})
 			camera_up = linalg.mul(camera_rotation, glsl.vec3{0.0, 1.0, 0.0})
 
-			camera_speed: f32 = 6.0 if keys[.Shift] else 3.0
+			camera_speed: f32 = 6.0 if keys[.Control] else 3.0
 			if keys[.W] do camera_position += camera_forward * camera_speed * dt
 			if keys[.S] do camera_position -= camera_forward * camera_speed * dt
 			if keys[.A] do camera_position += camera_right * camera_speed * dt
 			if keys[.D] do camera_position -= camera_right * camera_speed * dt
 			if keys[.Space] do camera_position += camera_up * camera_speed * dt
-			if keys[.Control] do camera_position -= camera_up * camera_speed * dt
+			if keys[.Shift] do camera_position -= camera_up * camera_speed * dt
 		}
 
 		// Render
@@ -266,7 +266,7 @@ main :: proc() {
 			Renderer_DrawMesh(
 				&crosshair_mesh,
 				&main_shader,
-				glsl.mat4Scale(4.0),
+				glsl.mat4Scale(6.0),
 				glsl.vec4{0.0, 0.0, 0.0, 0.6},
 			)
 			Renderer_End()
