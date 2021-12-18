@@ -6,11 +6,14 @@ import "core:runtime"
 Key :: enum {
 	Unknown,
 	W,
-	A,
 	S,
+	A,
 	D,
 	Q,
 	E,
+	Shift,
+	Space,
+	Control,
 }
 
 when ODIN_OS == "windows" {
@@ -18,15 +21,17 @@ when ODIN_OS == "windows" {
 	import "core:sys/win32"
 
 	Window :: struct {
-		width, height:   uint,
-		user_data:       any,
-		close_callback:  proc(window: ^Window),
-		resize_callback: proc(window: ^Window),
-		key_callback:    proc(window: ^Window, key: Key, pressed: bool),
-		_instance:       win32.Hinstance,
-		_handle:         win32.Hwnd,
-		_dc:             win32.Hdc,
-		_context:        runtime.Context,
+		width, height:       uint,
+		mouse_disabled:      bool,
+		user_data:           any,
+		close_callback:      proc(window: ^Window),
+		resize_callback:     proc(window: ^Window, width, height: uint),
+		key_callback:        proc(window: ^Window, key: Key, pressed: bool),
+		mouse_move_callback: proc(window: ^Window, x_delta, y_delta: int),
+		_instance:           win32.Hinstance,
+		_handle:             win32.Hwnd,
+		_dc:                 win32.Hdc,
+		_context:            runtime.Context,
 	}
 
 	@(private = "file")
@@ -34,6 +39,19 @@ when ODIN_OS == "windows" {
 
 	@(private = "file")
 	window_class_initialized := false
+
+	foreign import "system:user32.lib"
+	@(default_calling_convention = "std")
+	foreign user32 {
+		ShowCursor :: proc(bShow: win32.Bool) -> i32 ---
+		ClipCursor :: proc(lpRect: ^win32.Rect) -> win32.Bool ---
+		MapWindowPoints :: proc(
+			hWndFrom: win32.Hwnd,
+			hWndTo: win32.Hwnd,
+			lpPoints: ^win32.Point,
+			cPoints: u32,
+		) -> i32 ---
+	}
 
 	// TODO: Create a pull request for `core:sys/win32`
 	WM_NCCREATE: u32 : 0x0081
@@ -94,7 +112,7 @@ when ODIN_OS == "windows" {
 				if width > 0 && height > 0 {
 					window.width = cast(uint)width
 					window.height = cast(uint)height
-					window.resize_callback(window)
+					window.resize_callback(window, window.width, window.height)
 				}
 			}
 
@@ -105,22 +123,74 @@ when ODIN_OS == "windows" {
 				switch w_param {
 				case 'W':
 					key = .W
-				case 'A':
-					key = .A
 				case 'S':
 					key = .S
+				case 'A':
+					key = .A
 				case 'D':
 					key = .D
 				case 'Q':
 					key = .Q
 				case 'E':
 					key = .E
+				case VK_SHIFT:
+					key = .Shift
+				case VK_SPACE:
+					key = .Space
+				case VK_CONTROL:
+					key = .Control
 				case:
 					key = .Unknown
 				}
 				for _ in 0 ..< l_param & 0xF {
 					window.key_callback(window, key, pressed)
 				}
+			}
+			result = def_window_proc_a(hwnd, message, w_param, l_param)
+
+		case WM_INPUT:
+			if window.mouse_move_callback != nil {
+				raw_input := transmute(Hrawinput)l_param
+				size: u32
+				if get_raw_input_data(raw_input, RID_INPUT, nil, &size, size_of(Raw_Input_Header)) ==
+				   max(u32) {
+					fmt.printf("Failed to get the size of the mouse input data {}\n", get_last_error())
+				}
+				bytes := make([]byte, cast(int)size)
+				defer delete(bytes)
+				if get_raw_input_data(
+					   raw_input,
+					   RID_INPUT,
+					   raw_data(bytes),
+					   &size,
+					   size_of(Raw_Input_Header),
+				   ) == max(u32) {
+					fmt.printf("Failed to get the mouse input data {}\n", get_last_error())
+				}
+				input := cast(^Raw_Input)raw_data(bytes)
+				mouse_x := input.data.mouse.last_x
+				mouse_y := input.data.mouse.last_y
+				window.mouse_move_callback(window, cast(int)mouse_x, cast(int)mouse_y)
+			}
+
+		case WM_KILLFOCUS:
+			if window.mouse_disabled {
+				for ShowCursor(true) < 0 {}
+				ClipCursor(nil)
+			}
+
+		case WM_SETFOCUS:
+			if window.mouse_disabled {
+				for ShowCursor(false) >= 0 {}
+				rect: Rect
+				get_client_rect(window._handle, &rect)
+				MapWindowPoints(
+					window._handle,
+					nil,
+					cast(^Point)&rect,
+					size_of(Rect) / size_of(Point),
+				)
+				ClipCursor(&rect)
 			}
 
 		case:
@@ -196,11 +266,26 @@ when ODIN_OS == "windows" {
 			return nil
 		}
 
+		raw_input := Raw_Input_Device {
+			usage_page = 0x01,
+			usage      = 0x02,
+		}
+		if !register_raw_input_devices(&raw_input, 1, size_of(Raw_Input_Device)) {
+			fmt.eprintf("Failed to enable raw input {}\n", get_last_error())
+			release_dc(window._handle, window._dc)
+			destroy_window(window._handle)
+			free(window)
+			return nil
+		}
+
 		return window
 	}
 
 	Window_Destroy :: proc(window: ^Window) {
 		using win32
+		if window.mouse_disabled {
+			Window_EnableMouse(window)
+		}
 		release_dc(window._handle, window._dc)
 		destroy_window(window._handle)
 		free(window)
@@ -224,6 +309,22 @@ when ODIN_OS == "windows" {
 	Window_Hide :: proc(window: ^Window) {
 		using win32
 		show_window(window._handle, SW_HIDE)
+	}
+
+	Window_EnableMouse :: proc(window: ^Window) {
+		for ShowCursor(true) < 0 {}
+		ClipCursor(nil)
+		window.mouse_disabled = false
+	}
+
+	Window_DisableMouse :: proc(window: ^Window) {
+		using win32
+		for ShowCursor(false) >= 0 {}
+		rect: Rect
+		get_client_rect(window._handle, &rect)
+		MapWindowPoints(window._handle, nil, cast(^Point)&rect, size_of(Rect) / size_of(Point))
+		ClipCursor(&rect)
+		window.mouse_disabled = true
 	}
 
 } else {

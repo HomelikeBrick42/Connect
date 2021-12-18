@@ -7,6 +7,7 @@ import "core:strings"
 import "core:sys/win32"
 
 import "core:math"
+import "core:math/linalg"
 import "core:math/linalg/glsl"
 
 Vertex :: struct {
@@ -24,6 +25,7 @@ Data :: struct {
 	camera_position:          glsl.vec3,
 	camera_rotation:          glsl.quat,
 	keys:                     [Key]bool,
+	mouse_movement:           glsl.vec2,
 }
 
 main2 :: proc() {
@@ -110,7 +112,7 @@ main :: proc() {
 		using data := window.user_data.(^Data)
 		running = false
 	}
-	window.resize_callback = proc(window: ^Window) {
+	window.resize_callback = proc(window: ^Window, width, height: uint) {
 		using data := window.user_data.(^Data)
 		Renderer_OnResize(window.width, window.height)
 		camera_projection_matrix = glsl.mat4Perspective(
@@ -133,13 +135,20 @@ main :: proc() {
 		if key == .Unknown do return
 		keys[key] = pressed
 	}
+	window.mouse_move_callback = proc(window: ^Window, x_delta, y_delta: int) {
+		using data := window.user_data.(^Data)
+		mouse_movement.x += cast(f32)x_delta / cast(f32)window.width * 100.0
+		mouse_movement.y += cast(f32)y_delta / cast(f32)window.height * 100.0
+	}
 
 	camera_position = {0.0, 0.0, 2.0}
-	camera_rotation = {}
+	camera_rotation = glsl.quatAxisAngle({0.0, 1.0, 0.0}, 0.0)
 
 	running = true
 	last_time := GetTime()
 	Window_Show(window)
+	Window_DisableMouse(window)
+	mouse_movement = {0.0, 0.0}
 	for running {
 		Window_Update(window)
 
@@ -147,36 +156,68 @@ main :: proc() {
 		dt := cast(f32)(time - last_time)
 		last_time = time
 
-		CameraSpeed :: 5.0
-		if keys[.W] do camera_position.z -= CameraSpeed * dt
-		if keys[.S] do camera_position.z += CameraSpeed * dt
-		if keys[.A] do camera_position.x -= CameraSpeed * dt
-		if keys[.D] do camera_position.x += CameraSpeed * dt
-		if keys[.Q] do camera_position.y -= CameraSpeed * dt
-		if keys[.E] do camera_position.y += CameraSpeed * dt
+		// Update
+		{
+			camera_forward := linalg.mul(camera_rotation, glsl.vec3{0.0, 0.0, -1.0})
+			camera_right := linalg.mul(camera_rotation, glsl.vec3{-1.0, 0.0, 0.0})
+			camera_up := linalg.mul(camera_rotation, glsl.vec3{0.0, 1.0, 0.0})
 
-		Renderer_Clear({0.2, 0.4, 0.8, 1.0})
+			camera_rotation = glsl.quatAxisAngle(
+	                    camera_up,
+	                    -mouse_movement.x * 1000.0 * dt * math.RAD_PER_DEG,
+                    ) * camera_rotation
+			camera_rotation = glsl.quatAxisAngle(
+	                    camera_right,
+	                    mouse_movement.y * 1000.0 * dt * math.RAD_PER_DEG,
+                    ) * camera_rotation
 
-		Renderer_Begin(camera_position, camera_rotation, camera_projection_matrix, true)
-		Renderer_DrawMesh(
-			&triangle_mesh,
-			&main_shader,
-			glsl.identity(glsl.mat4),
-			glsl.vec4{1.0, 0.3, 0.0, 1.0},
-		)
-		Renderer_End()
+			rotation_speed: f32 = 90.0
+			z_rotation: f32
+			if keys[.E] do z_rotation += rotation_speed * dt
+			if keys[.Q] do z_rotation -= rotation_speed * dt
+			camera_rotation = glsl.quatAxisAngle(camera_forward, z_rotation * math.RAD_PER_DEG) * camera_rotation
 
-		Renderer_Begin({}, {}, ui_projection_matrix, false)
-		Renderer_DrawMesh(
-			&crosshair_mesh,
-			&main_shader,
-			glsl.mat4Scale(4.0),
-			glsl.vec4{0.0, 0.0, 0.0, 0.6},
-		)
-		Renderer_End()
+			camera_forward = linalg.mul(camera_rotation, glsl.vec3{0.0, 0.0, -1.0})
+			camera_right = linalg.mul(camera_rotation, glsl.vec3{-1.0, 0.0, 0.0})
+			camera_up = linalg.mul(camera_rotation, glsl.vec3{0.0, 1.0, 0.0})
 
-		Renderer_Present()
+			camera_speed: f32 = 6.0 if keys[.Shift] else 3.0
+			if keys[.W] do camera_position += camera_forward * camera_speed * dt
+			if keys[.S] do camera_position -= camera_forward * camera_speed * dt
+			if keys[.A] do camera_position += camera_right * camera_speed * dt
+			if keys[.D] do camera_position -= camera_right * camera_speed * dt
+			if keys[.Space] do camera_position += camera_up * camera_speed * dt
+			if keys[.Control] do camera_position -= camera_up * camera_speed * dt
+		}
+
+		// Render
+		{
+			Renderer_Clear({0.2, 0.4, 0.8, 1.0})
+
+			Renderer_Begin(camera_position, camera_rotation, camera_projection_matrix, true)
+			Renderer_DrawMesh(
+				&triangle_mesh,
+				&main_shader,
+				glsl.identity(glsl.mat4),
+				glsl.vec4{1.0, 0.3, 0.0, 1.0},
+			)
+			Renderer_End()
+
+			Renderer_Begin({}, {}, ui_projection_matrix, false)
+			Renderer_DrawMesh(
+				&crosshair_mesh,
+				&main_shader,
+				glsl.mat4Scale(4.0),
+				glsl.vec4{0.0, 0.0, 0.0, 0.6},
+			)
+			Renderer_End()
+
+			Renderer_Present()
+		}
+
+		mouse_movement = {0.0, 0.0}
 	}
+	Window_EnableMouse(window)
 	Window_Hide(window)
 }
 
